@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import '../group_db_helper.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 //해야될게 있으면 해야지  딴 생각하지말고.  졸려 뒤지겄소.
 
@@ -25,7 +22,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   Map<DateTime, String> paymentRecords = {}; // 날짜별 결제자 기록
   //처음에 DB에서 select,  이후 Map 직접 put + DB insert만.   DBselect는 맨 처음에만 하는거
 
-  Set<DateTime> _holidays = {}; // 공휴일 집합
+  Set<DateTime> _holidays = {}; // DB에서 불러온 공휴일 집합
   DateTime _focusedDay = DateTime
       .now(); // 현재 포커스된 날짜   Caledndars는 이 focusedDay를 가지고 해당 월의 달력을 만듬.
   DateTime? _selectedDay; // 선택된 날짜 (nullable)
@@ -36,9 +33,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
     //작업이 오래걸리는 일들은 여기서 해야 build하고 나서 작업이 일어남.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-    _loadGroup(); // 그룹 정보 불러오기
-    _loadPayments();
-    _loadHolidays(_focusedDay.year, _focusedDay.month); // 공휴일 불러오기
+      _loadGroup();
+      _loadPayments();
+      _loadHolidaysFromDB(); // 공휴일 DB에서만 불러오기
     });
   }
 
@@ -72,49 +69,13 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
   //db에 있는걸로 뭘 할까? ....
   //
 
-  // 공휴일 로딩 (API 호출)
-  Future<void> _loadHolidays(int year, int month) async {
-    try {
-      final result = await fetchKoreanHolidays(year, month);
-      setState(() {
-        _holidays = result.map((d) => normalizeDate(d)).toSet();
-      });
-    } catch (e) {
-      print('공휴일 불러오기 실패: $e');
-    }
+  // 공휴일 DB에서 불러오기
+  Future<void> _loadHolidaysFromDB() async {
+    final dates = await GroupDatabaseHelper().getAllHolidayDates();
+    setState(() {
+      _holidays = dates.map((d) => normalizeDate(d)).toSet();
+    });
   }
-
-  // 공공데이터포털 API를 이용한 공휴일 데이터 fetch
-  Future<List<DateTime>> fetchKoreanHolidays(int year, int month) async {
-    String apiKey = dotenv.env['PUBLIC_API_KEY'] ?? '';
-
-    final url =
-        'https://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo'
-        '?serviceKey=$apiKey'
-        '&solYear=$year'
-        '&solMonth=${month.toString().padLeft(2, '0')}'
-        '&_type=json';
-
-    final response = await http.get(Uri.parse(url));
-    if (response.statusCode == 200) {
-      final body = jsonDecode(response.body);
-      final items = body['response']['body']['items'];
-
-      if (items == null) return [];
-      final List holidays =
-      items['item'] is List ? items['item'] : [items['item']];
-      return holidays.map<DateTime>((item) {
-        final dateStr = item['locdate'].toString();
-        final year = int.parse(dateStr.substring(0, 4));
-        final month = int.parse(dateStr.substring(4, 6));
-        final day = int.parse(dateStr.substring(6, 8));
-        return DateTime(year, month, day);
-      }).toList();
-    } else {
-      throw Exception('공휴일 데이터를 불러오지 못했습니다.');
-    }
-  }
-
 
   // 날짜 클릭 시 실행되는 콜백
   void _onDaySelected(DateTime selectedDay, DateTime focusedDay) async {
@@ -243,7 +204,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final years = List.generate(10, (i) => 2020 + i); // 2020~2029
+    final currentYear = DateTime.now().year;
+    final years = List.generate(7, (i) => currentYear - 5 + i); // 현재 연도 기준 -5~+1년
     final months = List.generate(12, (i) => i + 1); // 1~12월
       Map<String, int> paymentCountByMember = {};
     for (final member in _members) {
@@ -255,11 +217,15 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
       }
     });  // 결제 개수가 크지않으니까 크게 상관없는데.. 나중에는 이 과정한번 + 필드에 map(멤버별 횟수)에다가  +1 -1 등등해야겠구만.
 
-    final minCount=paymentCountByMember.values.reduce((a, b) => a < b ? a : b);
-    final nextPayer = _members.firstWhere(
-          (m) => paymentCountByMember[m] == minCount,
-      orElse: () => '',
-    );
+    final minCount = paymentCountByMember.values.isNotEmpty
+        ? paymentCountByMember.values.reduce((a, b) => a < b ? a : b)
+        : 0;
+    final nextPayer = _members.isNotEmpty
+        ? _members.firstWhere(
+            (m) => paymentCountByMember[m] == minCount,
+            orElse: () => '',
+          )
+        : '';
 
 
     //detail 화면 들어가기전에 잠깐 에러나고 가네... 이거 확인하자.. minCount 다음결제자 하면서 생김 
@@ -278,10 +244,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
             Wrap(
               spacing: 16,
               children: _members.map((m) {
-
                 final count = paymentCountByMember[m] ?? 0;  //null이면 0
                 final isNext = m == nextPayer;
-
                 return Chip(
                     label: Text('$m ($count)'),
                    backgroundColor: isNext ? Colors.orange.shade200 : null,
@@ -309,7 +273,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                       final newDate = DateTime(year, _focusedDay.month);
                       setState(() {
                         _focusedDay = newDate;
-                        _loadHolidays(newDate.year, newDate.month);
+                        _loadHolidaysFromDB();
                       });
                     }
                   },
@@ -326,7 +290,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
                       final newDate = DateTime(_focusedDay.year, month);
                       setState(() {
                         _focusedDay = newDate;
-                        _loadHolidays(newDate.year, newDate.month);
+                        _loadHolidaysFromDB();
                       });
                     }
                   },
@@ -334,60 +298,45 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               ],
             ),
             SizedBox(height: 12),
-
-            // 달력 위젯
-            Expanded(
-              child: TableCalendar(
-                rowHeight: 80,
-                daysOfWeekHeight: 36,
-                firstDay: DateTime.utc(2020, 1, 1),
-                lastDay: DateTime.utc(2030, 12, 31),
-                focusedDay: _focusedDay,
-                //이 focusedDay(6월)를 기준으로 밑의 함수들의 파라미터 curDay(6월1일~ 6월30일)가 변경됨.
-                selectedDayPredicate: (curDay) =>
-                    isSameDay(normalizeDate(curDay), _selectedDay),
-                //true flase에 따라 caleder위젯이 알아서 다르게 표시. 역할: 어떤 날짜가 "선택된 날짜"인지 판단하는 기준.
-
-                onDaySelected: _onDaySelected,
-                headerVisible: false,
-                calendarFormat: CalendarFormat.month,
-                onPageChanged: (newFocusedDay) {  //페이지가 바뀌었을때... 기본적으로 15일이 newFocusedDay가 됨
-                  setState(() {
-                    _focusedDay = newFocusedDay;
-                  });
-                },
-                availableCalendarFormats: const {CalendarFormat.month: 'Month'},
-                calendarStyle: CalendarStyle(
-                  todayDecoration: BoxDecoration(),
-                  selectedDecoration: BoxDecoration(),
-
-                  //기본 스타일지정하는데 selectedBuilder,todayBuilder보단 낮음
-                  // 난 _paymentRecords 변수를 이용해서 만들어야되기때문에 builder 를 하기때문에 여기서는 큰 의미 없음.
-                  todayTextStyle: TextStyle(
-                      fontWeight: FontWeight.bold, color: Colors.purple),
-                  //현재날짜는 이렇게
-                  selectedTextStyle: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black), //선택된 날짜표기
-                ),
-
-                calendarBuilders: CalendarBuilders(
-                  dowBuilder: (context, curDay) =>
-                      _buildDowCell(context, curDay),   //이렇게 파라미터를 전부 쓸 때는 람다말고 _buildDowCell  딱 이것만 써도 됨.
-                  todayBuilder: (buildContext, curDay, foucsedDay) =>
-                      _basicMakeCalendarBuilder(
-                          buildContext, curDay, foucsedDay),
-
-                  // selectedDayPredicate: (day) => isSameDay(normalizeDate(day), _selectedDay)에서 true일 때( 선택된날짜일 떄)
-                  // 선택된날짜를 만드는 buidler
-                  selectedBuilder: (buildContext, curDay, foucsedDay) =>
-                      _basicMakeCalendarBuilder(
-                          buildContext, curDay, foucsedDay),
-                  defaultBuilder: (buildContext, curDay, foucsedDay) =>
-                      _basicMakeCalendarBuilder(
-                          buildContext, curDay, foucsedDay),
-
-                ),
+            // 달력 위젯 (높이 제한 없이 직접 배치)
+            TableCalendar(
+              rowHeight: 70, // 한 줄 높이 줄임
+              daysOfWeekHeight: 28, // 요일 줄 높이도 줄임
+              firstDay: DateTime.utc(2015, 1, 1),
+              lastDay: DateTime.utc(2035, 12, 31),
+              focusedDay: _focusedDay,
+              selectedDayPredicate: (curDay) =>
+                  isSameDay(normalizeDate(curDay), _selectedDay),
+              onDaySelected: _onDaySelected,
+              headerVisible: false,
+              calendarFormat: CalendarFormat.month,
+              onPageChanged: (newFocusedDay) {
+                setState(() {
+                  _focusedDay = newFocusedDay;
+                });
+              },
+              availableCalendarFormats: const {CalendarFormat.month: 'Month'},
+              calendarStyle: CalendarStyle(
+                todayDecoration: BoxDecoration(),
+                selectedDecoration: BoxDecoration(),
+                todayTextStyle: TextStyle(
+                    fontWeight: FontWeight.bold, color: Colors.purple),
+                selectedTextStyle: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black),
+              ),
+              calendarBuilders: CalendarBuilders(
+                dowBuilder: (context, curDay) =>
+                    _buildDowCell(context, curDay),
+                todayBuilder: (buildContext, curDay, foucsedDay) =>
+                    _basicMakeCalendarBuilder(
+                        buildContext, curDay, foucsedDay),
+                selectedBuilder: (buildContext, curDay, foucsedDay) =>
+                    _basicMakeCalendarBuilder(
+                        buildContext, curDay, foucsedDay),
+                defaultBuilder: (buildContext, curDay, foucsedDay) =>
+                    _basicMakeCalendarBuilder(
+                        buildContext, curDay, foucsedDay),
               ),
             ),
           ],

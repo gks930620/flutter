@@ -48,8 +48,8 @@ class GroupDatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 1,
-      onConfigure: (db) async {   //외래키 제약조건.  group삭제하면 member-payments 같이 삭제
+      version: 2, // 버전 2로 올림 (마이그레이션 필요시)
+      onConfigure: (db) async {
         await db.execute("PRAGMA foreign_keys = ON");
       },
       onCreate: (db, version) async {
@@ -67,7 +67,6 @@ class GroupDatabaseHelper {
             FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE
           )
         ''');
-
         await db.execute('''
           CREATE TABLE payments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,8 +76,58 @@ class GroupDatabaseHelper {
             FOREIGN KEY(group_id) REFERENCES groups(id) ON DELETE CASCADE
           )
         ''');
+        await db.execute('''
+          CREATE TABLE holidays (
+            holiday_date TEXT PRIMARY KEY,
+            name TEXT,
+            last_updated INTEGER
+          )
+        ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS holidays (
+              holiday_date TEXT PRIMARY KEY,
+              name TEXT,
+              last_updated INTEGER
+            )
+          ''');
+        }
       },
     );
+  }
+
+  // 공휴일 저장 (전체 덮어쓰기)
+  Future<void> saveHolidays(List<Map<String, dynamic>> holidays) async {
+    final db = await database;
+    final batch = db.batch();
+    batch.delete('holidays'); // 전체 삭제 후
+    for (final holiday in holidays) {
+      batch.insert('holidays', holiday);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  // 공휴일 전체 조회
+  Future<List<DateTime>> getAllHolidayDates() async {
+    final db = await database;
+    final rows = await db.query('holidays');
+    return rows.map((row) => DateTime.parse(row['holiday_date'] as String)).toList();
+  }
+
+  // 공휴일 전체 조회 (이름 포함)
+  Future<List<Map<String, dynamic>>> getAllHolidays() async {
+    final db = await database;
+    return await db.query('holidays');
+  }
+
+  // 마지막 공휴일 업데이트 시각 조회 (epoch millis)
+  Future<int?> getLastHolidayUpdate() async {
+    final db = await database;
+    final rows = await db.query('holidays', orderBy: 'last_updated DESC', limit: 1);
+    if (rows.isEmpty) return null;
+    return rows.first['last_updated'] as int?;
   }
 
   Future<int> createGroup(String groupName, List<String> members) async {
