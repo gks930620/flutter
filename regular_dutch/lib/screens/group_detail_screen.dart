@@ -244,10 +244,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
             Wrap(
               spacing: 16,
               children: _members.map((m) {
-
                 final count = paymentCountByMember[m] ?? 0;  //null이면 0
                 final isNext = m == nextPayer;
-
                 return Chip(
                     label: Text('$m ($count)'),
                    backgroundColor: isNext ? Colors.orange.shade200 : null,
@@ -300,60 +298,45 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
               ],
             ),
             SizedBox(height: 12),
-
-            // 달력 위젯
-            Expanded(
-              child: TableCalendar(
-                rowHeight: 80,
-                daysOfWeekHeight: 36,
-                firstDay: DateTime.utc(2020, 1, 1),
-                lastDay: DateTime.utc(2030, 12, 31),
-                focusedDay: _focusedDay,
-                //이 focusedDay(6월)를 기준으로 밑의 함수들의 파라미터 curDay(6월1일~ 6월30일)가 변경됨.
-                selectedDayPredicate: (curDay) =>
-                    isSameDay(normalizeDate(curDay), _selectedDay),
-                //true flase에 따라 caleder위젯이 알아서 다르게 표시. 역할: 어떤 날짜가 "선택된 날짜"인지 판단하는 기준.
-
-                onDaySelected: _onDaySelected,
-                headerVisible: false,
-                calendarFormat: CalendarFormat.month,
-                onPageChanged: (newFocusedDay) {  //페이지가 바뀌었을때... 기본적으로 15일이 newFocusedDay가 됨
-                  setState(() {
-                    _focusedDay = newFocusedDay;
-                  });
-                },
-                availableCalendarFormats: const {CalendarFormat.month: 'Month'},
-                calendarStyle: CalendarStyle(
-                  todayDecoration: BoxDecoration(),
-                  selectedDecoration: BoxDecoration(),
-
-                  //기본 스타일지정하는데 selectedBuilder,todayBuilder보단 낮음
-                  // 난 _paymentRecords 변수를 이용해서 만들어야되기때문에 builder 를 하기때문에 여기서는 큰 의미 없음.
-                  todayTextStyle: TextStyle(
-                      fontWeight: FontWeight.bold, color: Colors.purple),
-                  //현재날짜는 이렇게
-                  selectedTextStyle: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black), //선택된 날짜표기
-                ),
-
-                calendarBuilders: CalendarBuilders(
-                  dowBuilder: (context, curDay) =>
-                      _buildDowCell(context, curDay),   //이렇게 파라미터를 전부 쓸 때는 람다말고 _buildDowCell  딱 이것만 써도 됨.
-                  todayBuilder: (buildContext, curDay, foucsedDay) =>
-                      _basicMakeCalendarBuilder(
-                          buildContext, curDay, foucsedDay),
-
-                  // selectedDayPredicate: (day) => isSameDay(normalizeDate(day), _selectedDay)에서 true일 때( 선택된날짜일 떄)
-                  // 선택된날짜를 만드는 buidler
-                  selectedBuilder: (buildContext, curDay, foucsedDay) =>
-                      _basicMakeCalendarBuilder(
-                          buildContext, curDay, foucsedDay),
-                  defaultBuilder: (buildContext, curDay, foucsedDay) =>
-                      _basicMakeCalendarBuilder(
-                          buildContext, curDay, foucsedDay),
-
-                ),
+            // 달력 위젯 (높이 제한 없이 직접 배치)
+            TableCalendar(
+              rowHeight: 70, // 한 줄 높이 줄임
+              daysOfWeekHeight: 28, // 요일 줄 높이도 줄임
+              firstDay: DateTime.utc(2015, 1, 1),
+              lastDay: DateTime.utc(2035, 12, 31),
+              focusedDay: _focusedDay,
+              selectedDayPredicate: (curDay) =>
+                  isSameDay(normalizeDate(curDay), _selectedDay),
+              onDaySelected: _onDaySelected,
+              headerVisible: false,
+              calendarFormat: CalendarFormat.month,
+              onPageChanged: (newFocusedDay) {
+                setState(() {
+                  _focusedDay = newFocusedDay;
+                });
+              },
+              availableCalendarFormats: const {CalendarFormat.month: 'Month'},
+              calendarStyle: CalendarStyle(
+                todayDecoration: BoxDecoration(),
+                selectedDecoration: BoxDecoration(),
+                todayTextStyle: TextStyle(
+                    fontWeight: FontWeight.bold, color: Colors.purple),
+                selectedTextStyle: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black),
+              ),
+              calendarBuilders: CalendarBuilders(
+                dowBuilder: (context, curDay) =>
+                    _buildDowCell(context, curDay),
+                todayBuilder: (buildContext, curDay, foucsedDay) =>
+                    _basicMakeCalendarBuilder(
+                        buildContext, curDay, foucsedDay),
+                selectedBuilder: (buildContext, curDay, foucsedDay) =>
+                    _basicMakeCalendarBuilder(
+                        buildContext, curDay, foucsedDay),
+                defaultBuilder: (buildContext, curDay, foucsedDay) =>
+                    _basicMakeCalendarBuilder(
+                        buildContext, curDay, foucsedDay),
               ),
             ),
           ],
