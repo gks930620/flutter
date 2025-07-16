@@ -43,6 +43,9 @@ app.*.map.json
 /android/app/release
 
 
-
 .env
 참고.txt
+
+/android/key.properties
+*.jks
+*.pem
